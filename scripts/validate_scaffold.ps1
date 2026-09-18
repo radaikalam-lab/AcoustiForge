@@ -1,22 +1,10 @@
+# AcoustiForge Scaffold Validation
+# Phase 0 repository hygiene and governance check
+
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
-
-$RequiredDirectories = @(
-    ".kilo",
-    ".project",
-    "contracts",
-    "data",
-    "docs",
-    "prompts",
-    "scripts"
-)
-
-$RequiredFiles = @(
-    # Intentionally empty at initial scaffold stage.
-    # Files will become mandatory as phases are implemented.
-)
 
 $Failures = 0
 
@@ -41,10 +29,10 @@ Write-Host "Repository: $RepoRoot"
 Write-Host ""
 
 # ------------------------------------------------------------
-# 1. Repository root
+# Repository root
 # ------------------------------------------------------------
 
-if ((Test-Path $RepoRoot) -and ((Get-Item $RepoRoot).PSIsContainer)) {
+if (Test-Path $RepoRoot) {
     Pass "Repository root exists"
 }
 else {
@@ -52,30 +40,81 @@ else {
 }
 
 # ------------------------------------------------------------
-# 2. Required directories
+# Required Phase 0 directories
 # ------------------------------------------------------------
 
-foreach ($Dir in $RequiredDirectories) {
+$RequiredDirectories = @(
+    "contracts",
+    "data",
+    "docs",
+    "prompts",
+    "scripts"
+)
 
-    $Path = Join-Path $RepoRoot $Dir
-
-    if (Test-Path $Path -PathType Container) {
-        Pass "Directory exists: $Dir"
+foreach ($Directory in $RequiredDirectories) {
+    if (Test-Path (Join-Path $RepoRoot $Directory) -PathType Container) {
+        Pass "Directory exists: $Directory"
     }
     else {
-        Fail "Missing required directory: $Dir"
+        Fail "Missing required directory: $Directory"
     }
 }
 
 # ------------------------------------------------------------
-# 3. Required files
+# Phase 0 directories that must NOT exist yet
 # ------------------------------------------------------------
 
+$DeferredDirectories = @(
+    "src",
+    "tests",
+    ".kilo",
+    ".project"
+)
+
+foreach ($Directory in $DeferredDirectories) {
+    if (Test-Path (Join-Path $RepoRoot $Directory)) {
+        Fail "Deferred directory unexpectedly exists: $Directory"
+    }
+}
+
+# ------------------------------------------------------------
+# Known inherited-project artifacts
+# ------------------------------------------------------------
+
+$ForbiddenArtifacts = @(
+    ".kilo",
+    ".project",
+    "scripts/bootstrap-contracts.ps1",
+    "scripts/contract-gate-0.ps1",
+    "scripts/contract-gate-0.ps1.md",
+    "scripts/contract_gate_0.py",
+    "scripts/project-check.ps1",
+    "scripts/project_check.ps1",
+    "scripts/docker-check.ps1",
+    "scripts/docker-lint.ps1",
+    "scripts/docker-shell.ps1",
+    "scripts/docker-test.ps1"
+)
+
+foreach ($Artifact in $ForbiddenArtifacts) {
+    if (Test-Path (Join-Path $RepoRoot $Artifact)) {
+        Fail "Inherited artifact detected: $Artifact"
+    }
+}
+
+# ------------------------------------------------------------
+# Required governance files
+# ------------------------------------------------------------
+
+$RequiredFiles = @(
+    "prompts/MASTER_PROMPT.md",
+    "prompts/PHASE_0_DISCOVERY.md",
+    "docs/ARCHITECTURE.md",
+    "scripts/validate_scaffold.ps1"
+)
+
 foreach ($File in $RequiredFiles) {
-
-    $Path = Join-Path $RepoRoot $File
-
-    if (Test-Path $Path -PathType Leaf) {
+    if (Test-Path (Join-Path $RepoRoot $File) -PathType Leaf) {
         Pass "File exists: $File"
     }
     else {
@@ -84,128 +123,87 @@ foreach ($File in $RequiredFiles) {
 }
 
 # ------------------------------------------------------------
-# 4. Git repository
+# Git repository
 # ------------------------------------------------------------
 
-if (Test-Path (Join-Path $RepoRoot ".git")) {
+git rev-parse --is-inside-work-tree *> $null
+
+if ($LASTEXITCODE -eq 0) {
     Pass "Git repository initialized"
 }
 else {
-    Fail "Git repository not initialized"
+    Fail "Git repository is not initialized"
 }
 
 # ------------------------------------------------------------
-# 5. Git remote
+# Git remote
 # ------------------------------------------------------------
 
-try {
-    $Remote = git remote get-url origin 2>$null
+$Origin = git remote get-url origin 2>$null
 
-    if ($Remote) {
-        Info "Git remote: $Remote"
+if ($LASTEXITCODE -eq 0 -and $Origin) {
+    Info "Git remote: $Origin"
 
-        if ($Remote -match "github\.com/radaikalam-lab/AcoustiForge") {
-            Pass "Origin points to AcoustiForge GitHub repository"
-        }
-        else {
-            Fail "Origin does not point to radaikalam-lab/AcoustiForge"
-        }
+    if ($Origin -match "github\.com/radaikalam-lab/AcoustiForge") {
+        Pass "Origin points to AcoustiForge GitHub repository"
     }
     else {
-        Fail "No origin remote configured"
+        Fail "Origin does not point to AcoustiForge GitHub repository"
     }
 }
-catch {
-    Fail "Unable to inspect Git remote"
+else {
+    Fail "Git origin remote is not configured"
 }
 
 # ------------------------------------------------------------
-# 6. Unexpected top-level directories
+# Top-level directory hygiene
 # ------------------------------------------------------------
 
-$AllowedDirectories = @(
+$AllowedTopLevel = @(
     ".git",
-    ".github",
-    ".kilo",
-    ".project",
     "contracts",
     "data",
     "docs",
     "prompts",
-    "scripts",
-    "src",
-    "tests",
-    "upstream",
-    "hardware",
-    "tools"
+    "scripts"
 )
 
-$TopLevelDirectories = Get-ChildItem -Path $RepoRoot -Directory -Force |
-    Select-Object -ExpandProperty Name
+$TopLevelItems = Get-ChildItem -Force
 
-foreach ($Dir in $TopLevelDirectories) {
+foreach ($Item in $TopLevelItems) {
 
-    if ($AllowedDirectories -contains $Dir) {
-        Pass "Recognized top-level directory: $Dir"
+    if ($AllowedTopLevel -contains $Item.Name) {
+        Pass "Recognized top-level directory: $($Item.Name)"
+    }
+    elseif ($Item.Name -eq ".git") {
+        Pass "Git metadata directory present"
     }
     else {
-        Write-Host "[WARN] Unrecognized top-level directory: $Dir" `
-            -ForegroundColor Yellow
+        Fail "Unexpected top-level item: $($Item.Name)"
     }
 }
 
 # ------------------------------------------------------------
-# 7. Check for accidental build/cache artifacts
+# Working tree state
 # ------------------------------------------------------------
 
-$ForbiddenPatterns = @(
-    "bin",
-    "obj",
-    "__pycache__",
-    ".pytest_cache",
-    ".venv",
-    "node_modules"
-)
+$Status = git status --short
 
-foreach ($Pattern in $ForbiddenPatterns) {
-
-    $Found = Get-ChildItem `
-        -Path $RepoRoot `
-        -Directory `
-        -Force `
-        -Recurse `
-        -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -eq $Pattern }
-
-    if ($Found) {
-        Write-Host "[WARN] Build/cache directory detected: $Pattern" `
-            -ForegroundColor Yellow
+if ($LASTEXITCODE -ne 0) {
+    Fail "Unable to determine Git working tree status"
+}
+elseif ($Status) {
+    Info "Working tree contains uncommitted/untracked content:"
+    $Status | ForEach-Object {
+        Write-Host "        $_"
     }
+}
+else {
+    Pass "Working tree is clean"
 }
 
 # ------------------------------------------------------------
-# 8. Git status
-# ------------------------------------------------------------
-
-try {
-    $Status = git status --short
-
-    if ($Status) {
-        Info "Working tree contains uncommitted/untracked content:"
-        $Status | ForEach-Object {
-            Write-Host "       $_"
-        }
-    }
-    else {
-        Pass "Git working tree is clean"
-    }
-}
-catch {
-    Fail "Unable to inspect Git status"
-}
-
-# ------------------------------------------------------------
-# Final result
+# Result
 # ------------------------------------------------------------
 
 Write-Host ""
@@ -213,14 +211,17 @@ Write-Host "============================================="
 
 if ($Failures -eq 0) {
     Write-Host " RESULT: PASS" -ForegroundColor Green
-    Write-Host " Scaffold is structurally valid."
 }
 else {
     Write-Host " RESULT: FAIL" -ForegroundColor Red
-    Write-Host " Failures: $Failures"
 }
 
+Write-Host " Failures: $Failures"
 Write-Host "============================================="
 Write-Host ""
 
-exit $Failures
+if ($Failures -gt 0) {
+    exit 1
+}
+
+exit 0
