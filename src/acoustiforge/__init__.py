@@ -66,11 +66,14 @@ from .domain import (
     TransducerLimits,
 )
 from .acoustic_math import (
+    CalibrationBoundaryPolicy,
+    CalibrationOutOfRangeError,
     CrossoverSynthesisResult,
     DriverAlignmentResult,
     EQSynthesisResult,
     GainDesignResult,
     ProtectionFilterResult,
+    apply_microphone_calibration,
     calculate_driver_alignment,
     calculate_sensitivity_gain,
     calculate_system_alignments,
@@ -85,6 +88,15 @@ from .builders import (
     CrossoverGraphBuilder,
     SystemTopologyBuilder,
 )
+from .io import (
+    InvalidMeasurementDataError,
+    MalformedMeasurementDataError,
+    MeasurementImportResult,
+    MeasurementIngestionError,
+    UnsupportedMeasurementFormatError,
+    parse_measurement_file,
+    parse_measurement_text,
+)
 
 __version__ = "0.1.0"
 
@@ -95,6 +107,8 @@ __all__ = [
     "BaseProcessingNode",
     "BiquadCoefficients",
     "BiquadNode",
+    "CalibrationBoundaryPolicy",
+    "CalibrationOutOfRangeError",
     "ChannelLayout",
     "ChannelMismatchError",
     "ComputeGraph",
@@ -125,6 +139,7 @@ __all__ = [
     "InvalidBlockSizeError",
     "InvalidChannelCountError",
     "InvalidGraphError",
+    "InvalidMeasurementDataError",
     "InvalidMeasurementError",
     "InvalidParameterError",
     "InvalidProfileError",
@@ -132,6 +147,9 @@ __all__ = [
     "InvalidSampleRateError",
     "InvalidSpecificationError",
     "MalformedBufferError",
+    "MalformedMeasurementDataError",
+    "MeasurementImportResult",
+    "MeasurementIngestionError",
     "NonContiguousBufferError",
     "NonFiniteValueError",
     "PCMBlock",
@@ -147,7 +165,9 @@ __all__ = [
     "TransducerLimits",
     "UnconnectedPortError",
     "UnstableFilterError",
+    "UnsupportedMeasurementFormatError",
     "__version__",
+    "apply_microphone_calibration",
     "calculate_biquad_coefficients",
     "calculate_driver_alignment",
     "calculate_sensitivity_gain",
@@ -156,6 +176,8 @@ __all__ = [
     "derive_protection_filter_for_driver",
     "design_infrasonic_protection_filter",
     "evaluate_target_curve",
+    "parse_measurement_file",
+    "parse_measurement_text",
     "synthesize_crossover_biquads",
     "synthesize_parametric_eq",
     "validate_metadata",

@@ -10,6 +10,11 @@ Normative Authority:
 """
 
 from .alignment import DriverAlignmentResult, calculate_driver_alignment, calculate_system_alignments
+from .calibration import (
+    CalibrationBoundaryPolicy,
+    CalibrationOutOfRangeError,
+    apply_microphone_calibration,
+)
 from .crossover import CrossoverSynthesisResult, synthesize_crossover_biquads
 from .equalizer import EQSynthesisResult, synthesize_parametric_eq
 from .protection import (
@@ -21,11 +26,14 @@ from .sensitivity import GainDesignResult, calculate_sensitivity_gain, calculate
 from .target_curve import evaluate_target_curve
 
 __all__ = [
+    "CalibrationBoundaryPolicy",
+    "CalibrationOutOfRangeError",
     "CrossoverSynthesisResult",
     "DriverAlignmentResult",
     "EQSynthesisResult",
     "GainDesignResult",
     "ProtectionFilterResult",
+    "apply_microphone_calibration",
     "calculate_driver_alignment",
     "calculate_sensitivity_gain",
     "calculate_system_alignments",

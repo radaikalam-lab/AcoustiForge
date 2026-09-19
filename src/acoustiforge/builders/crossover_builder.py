@@ -14,6 +14,7 @@ from typing import Mapping, Optional, Sequence
 
 from ..acoustic_math.alignment import DriverAlignmentResult
 from ..acoustic_math.crossover import CrossoverSynthesisResult
+from ..acoustic_math.equalizer import EQSynthesisResult
 from ..acoustic_math.protection import ProtectionFilterResult
 from ..acoustic_math.sensitivity import GainDesignResult
 from ..contracts.validation import InvalidParameterError, InvalidSampleRateError
@@ -78,19 +79,21 @@ class CrossoverGraphBuilder:
         crossover_result: CrossoverSynthesisResult,
         alignments: Optional[Mapping[str, DriverAlignmentResult]] = None,
         gains: Optional[Mapping[str, GainDesignResult]] = None,
+        equalizers: Optional[Mapping[str, EQSynthesisResult]] = None,
         protections: Optional[Mapping[str, ProtectionFilterResult]] = None,
     ) -> ComputeGraph:
         """Build and freeze a 2-way loudspeaker crossover compute graph from explicit mathematical results.
 
         Constructs the following deterministic processing pipeline:
             input ("input")
-              ├── woofer:  [delay] → [gain] → [low_pass_crossover_sections...] → [protection_sections...] → output
-              └── tweeter: [delay] → [gain] → [high_pass_crossover_sections...] → [protection_sections...] → output
+              ├── woofer:  [delay] → [gain] → [eq_sections...] → [low_pass_crossover_sections...] → [protection_sections...] → output
+              └── tweeter: [delay] → [gain] → [eq_sections...] → [high_pass_crossover_sections...] → [protection_sections...] → output
 
         Args:
             crossover_result: Pre-computed CrossoverSynthesisResult containing low-pass and high-pass biquad sections.
             alignments: Optional mapping of driver name to DriverAlignmentResult.
             gains: Optional mapping of driver name to GainDesignResult.
+            equalizers: Optional mapping of driver name to EQSynthesisResult.
             protections: Optional mapping of driver name to ProtectionFilterResult.
 
         Returns:
@@ -110,6 +113,17 @@ class CrossoverGraphBuilder:
                 f"does not match builder configured sample rate ({self._sample_rate} Hz)."
             )
 
+        if equalizers:
+            for d_name, eq_res in equalizers.items():
+                if eq_res is not None:
+                    if not isinstance(eq_res, EQSynthesisResult):
+                        raise InvalidParameterError(f"Expected EQSynthesisResult for driver {d_name!r}, got {type(eq_res)!r}.")
+                    if eq_res.sample_rate != self._sample_rate:
+                        raise InvalidParameterError(
+                            f"EQSynthesisResult for driver {d_name!r} sample rate ({eq_res.sample_rate} Hz) "
+                            f"does not match builder configured sample rate ({self._sample_rate} Hz)."
+                        )
+
         graph = ComputeGraph(name=self._graph_name)
 
         # 1. Root input fan-out node
@@ -126,6 +140,7 @@ class CrossoverGraphBuilder:
             crossover_sections=crossover_result.low_pass_sections,
             alignment=alignments.get(self._woofer_name) if alignments else None,
             gain_result=gains.get(self._woofer_name) if gains else None,
+            equalizer=equalizers.get(self._woofer_name) if equalizers else None,
             protection=protections.get(self._woofer_name) if protections else None,
             root_source_id=root_input_id,
         )
@@ -138,6 +153,7 @@ class CrossoverGraphBuilder:
             crossover_sections=crossover_result.high_pass_sections,
             alignment=alignments.get(self._tweeter_name) if alignments else None,
             gain_result=gains.get(self._tweeter_name) if gains else None,
+            equalizer=equalizers.get(self._tweeter_name) if equalizers else None,
             protection=protections.get(self._tweeter_name) if protections else None,
             root_source_id=root_input_id,
         )
@@ -152,16 +168,18 @@ class CrossoverGraphBuilder:
         graph: ComputeGraph,
         driver_name: str,
         crossover_sections: Sequence[BiquadNode | BiquadCoefficients],
-        alignment: Optional[DriverAlignmentResult],
-        gain_result: Optional[GainDesignResult],
-        protection: Optional[ProtectionFilterResult],
-        root_source_id: str,
+        alignment: Optional[DriverAlignmentResult] = None,
+        gain_result: Optional[GainDesignResult] = None,
+        protection: Optional[ProtectionFilterResult] = None,
+        root_source_id: str = "input",
+        equalizer: Optional[EQSynthesisResult] = None,
     ) -> str:
         """Construct sequential processing stages for a single driver branch.
 
         Deterministic Node IDs:
         - Alignment Delay: f"{driver_name}.delay"
         - Sensitivity Gain: f"{driver_name}.gain"
+        - Equalizer Filters: f"{driver_name}.eq.{idx}"
         - Crossover Filters: f"{driver_name}.crossover.{idx}"
         - Protection Filters: f"{driver_name}.protection.{idx}"
 
@@ -192,7 +210,19 @@ class CrossoverGraphBuilder:
         )
         branch_nodes.append((gain_id, gain_node))
 
-        # 3. Crossover Filter stage
+        # 3. Equalizer Filter stage (if present)
+        if equalizer is not None and equalizer.sections:
+            for idx, sec in enumerate(equalizer.sections):
+                eq_id = f"{driver_name}.eq.{idx}"
+                eq_node = BiquadNode.from_coefficients(
+                    coefficients=sec,
+                    sample_rate=self._sample_rate,
+                    channels=self._channels,
+                    name=eq_id,
+                )
+                branch_nodes.append((eq_id, eq_node))
+
+        # 4. Crossover Filter stage
         for idx, sec in enumerate(crossover_sections):
             filt_id = f"{driver_name}.crossover.{idx}"
             filt_node = BiquadNode.from_coefficients(
@@ -203,7 +233,7 @@ class CrossoverGraphBuilder:
             )
             branch_nodes.append((filt_id, filt_node))
 
-        # 4. Protection Filter stage (if present)
+        # 5. Protection Filter stage (if present)
         if protection is not None and protection.sections:
             for idx, sec in enumerate(protection.sections):
                 prot_id = f"{driver_name}.protection.{idx}"
