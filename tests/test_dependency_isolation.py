@@ -24,15 +24,12 @@ FORBIDDEN_MODULES = {
 }
 
 OUT_OF_SCOPE_KEYWORDS = {
-    "crossover",
     "compressor",
     "limiter",
-    "thiele_small",
     "psychoacoustic",
     "bass_boost",
     "spatializer",
     "graphic_eq",
-    "parametric_eq",
 }
 
 
