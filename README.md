@@ -24,7 +24,7 @@ AcoustiForge is engineered around strict trust and determinism boundaries:
 
 ## 2. System Architecture
 
-AcoustiForge provides two distinct, fully decoupled operational paths: the **Deterministic DSP & Playback Execution Path** and the **Sequential Physical Measurement & Calibration Path**:
+AcoustiForge provides two distinct, contract-governed pipelines with a defined physical measurement boundary: the **Deterministic DSP & Playback Execution Path** and the **Sequential Physical Measurement & Calibration Path**:
 
 ```text
                                 USER / APPLICATION
@@ -164,7 +164,7 @@ Located in `src/acoustiforge/acoustic_math/sweep.py`, `gating.py`, `calibration.
 
 * **Logarithmic Sine Sweep Generator (`generate_log_sweep`):** Deterministic, Nyquist-bounded excitation signal generation with smooth cosine boundary tapers and configurable amplitude/duration.
 * **Farina Inverse Filter & Deconvolution (`generate_inverse_sweep`, `deconvolve_sweep`):** Analytical $-6\text{ dB/octave}$ time-reversed inverse filter and linear FFT deconvolution to extract time-domain impulse responses ($IR$).
-* **Pseudo-Anechoic Reflection Gating (`apply_reflection_gate`):** Isolates direct acoustic sound from room boundary reflections using configurable Hann, Tukey, and Half-Hann window tapers.
+* **Reflection-Gated Measurement (`apply_reflection_gate`):** Isolates direct acoustic sound from room boundary reflections using configurable Hann, Tukey, and Half-Hann window tapers.
 * **Microphone Calibration (`apply_microphone_calibration`):** Interpolates and subtracts laboratory microphone calibration files (`.cal`, `.txt`) across magnitude and phase.
 * **Measurement Quality Diagnostics (`evaluate_measurement_quality`):** Evaluates SNR, low-frequency resolution limits, and reflection contamination notches.
 
@@ -393,11 +393,11 @@ pytest -q -W error
 * End-to-end simulated physical measurement pipeline harness.
 * AI DesignIntent translation with strict fail-closed validation firewall.
 * Local append-only JSONL Experience Store with engagement and solar context.
-* Deterministic multi-criteria experience retrieval and descriptive analytics.
+* Gate A-S: Digital / Software ALSA playback, format negotiation, and lifecycle verification.
 
 ### Pending Physical Hardware Validation (Phase 5-4C)
 
-* **Gate A — Electrical / ALSA Playback:** Physical verification of 24-bit/48kHz streaming to physical USB DAC on Linux host.
+* **Gate A-H — Physical ALSA Playback:** Physical verification of continuous streaming to physical USB DAC / audio interface on Linux host.
 * **Gate B — Raw Acoustic Measurement:** Physical sweep playback and USB measurement microphone capture.
 * **Gate C — Measurement Repeatability:** Verification of baseline repeatability ($\sigma < 0.3\text{ dB}$).
 * **Gate D — Bounded DSP Execution:** Real-time hardware playback through active `ComputeGraph`.

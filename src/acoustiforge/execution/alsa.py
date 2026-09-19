@@ -261,6 +261,19 @@ class AlsaCtypesBinding:
         cls._lib.snd_strerror.argtypes = [ctypes.c_int]
         cls._lib.snd_strerror.restype = ctypes.c_char_p
 
+        # snd_pcm_set_params(snd_pcm_t *pcm, snd_pcm_format_t format, snd_pcm_access_t access, unsigned int channels, unsigned int rate, int soft_resample, unsigned int latency)
+        if hasattr(cls._lib, "snd_pcm_set_params"):
+            cls._lib.snd_pcm_set_params.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint,
+                ctypes.c_uint,
+                ctypes.c_int,
+                ctypes.c_uint,
+            ]
+            cls._lib.snd_pcm_set_params.restype = ctypes.c_int
+
 
 # ==============================================================================
 # ALSA Device Abstraction & Mock Interface
@@ -268,6 +281,17 @@ class AlsaCtypesBinding:
 
 class IAlsaDeviceHandle:
     """Interface representing an open ALSA PCM device handle."""
+
+    def set_params(
+        self,
+        format: int,
+        access: int,
+        channels: int,
+        rate: int,
+        soft_resample: int,
+        latency: int,
+    ) -> int:
+        raise NotImplementedError
 
     def prepare(self) -> int:
         raise NotImplementedError
@@ -325,6 +349,21 @@ class MockAlsaDeviceHandle(IAlsaDeviceHandle):
         self._read_cursor: int = 0
         self.recovered_xruns: int = 0
         self.captured_buffers: list[np.ndarray] = []
+
+    def set_params(
+        self,
+        format: int,
+        access: int,
+        channels: int,
+        rate: int,
+        soft_resample: int,
+        latency: int,
+    ) -> int:
+        if self.is_closed:
+            return -EBADFD
+        self.channels = channels
+        self.sample_rate = rate
+        return 0
 
     def prepare(self) -> int:
         if self.is_closed:
@@ -416,6 +455,31 @@ class NativeAlsaDeviceHandle(IAlsaDeviceHandle):
         self._lib: ctypes.CDLL = lib
         self._is_closed: bool = False
 
+    def set_params(
+        self,
+        format: int,
+        access: int,
+        channels: int,
+        rate: int,
+        soft_resample: int,
+        latency: int,
+    ) -> int:
+        if self._is_closed or self._pcm_ptr is None:
+            return -EBADFD
+        if hasattr(self._lib, "snd_pcm_set_params"):
+            return int(
+                self._lib.snd_pcm_set_params(
+                    self._pcm_ptr,
+                    ctypes.c_int(format),
+                    ctypes.c_int(access),
+                    ctypes.c_uint(channels),
+                    ctypes.c_uint(rate),
+                    ctypes.c_int(soft_resample),
+                    ctypes.c_uint(latency),
+                )
+            )
+        return 0
+
     def prepare(self) -> int:
         if self._is_closed:
             return -EBADFD
@@ -474,6 +538,12 @@ class AlsaExecutionBackend(LinuxExecutionBackend):
         self._auto_recover_xruns: bool = auto_recover_xruns
         self._recovered_xrun_count: int = 0
         self._frames_transferred: int = 0
+        self._negotiated_format: str = "float32"
+
+    @property
+    def negotiated_format(self) -> str:
+        """Actual negotiated ALSA sample format ('float32' or 'int16')."""
+        return self._negotiated_format
 
     @property
     def recovered_xrun_count(self) -> int:
@@ -486,7 +556,7 @@ class AlsaExecutionBackend(LinuxExecutionBackend):
         return self._frames_transferred
 
     def start(self) -> None:
-        """Open ALSA PCM device, prepare stream, and enter RUNNING state."""
+        """Open ALSA PCM device, configure hardware parameters, prepare stream, and enter RUNNING state."""
         if self._state == ExecutionState.RUNNING:
             return
         if self._state not in (ExecutionState.CONFIGURED, ExecutionState.STOPPED):
@@ -524,6 +594,36 @@ class AlsaExecutionBackend(LinuxExecutionBackend):
                     sample_rate=self._linux_config.sample_rate,
                     channels=self._linux_config.channels,
                     block_size=self._linux_config.block_size,
+                )
+
+        # Configure hardware parameters and negotiate format
+        latency_us = int(round((self._linux_config.block_size * self._linux_config.periods_per_buffer / self._linux_config.sample_rate) * 1_000_000))
+        set_err = self._handle.set_params(
+            format=SND_PCM_FORMAT_FLOAT_LE,
+            access=SND_PCM_ACCESS_RW_INTERLEAVED,
+            channels=self._linux_config.channels,
+            rate=self._linux_config.sample_rate,
+            soft_resample=1,
+            latency=max(10000, latency_us),
+        )
+        if set_err == 0:
+            self._negotiated_format = "float32"
+        else:
+            # Fallback to 16-bit integer PCM if device driver rejects float32
+            set_err_int16 = self._handle.set_params(
+                format=SND_PCM_FORMAT_S16_LE,
+                access=SND_PCM_ACCESS_RW_INTERLEAVED,
+                channels=self._linux_config.channels,
+                rate=self._linux_config.sample_rate,
+                soft_resample=1,
+                latency=max(10000, latency_us),
+            )
+            if set_err_int16 == 0:
+                self._negotiated_format = "int16"
+            else:
+                raise ExecutionDeviceError(
+                    f"Failed to configure ALSA PCM hardware parameters (rate={self._linux_config.sample_rate}, "
+                    f"channels={self._linux_config.channels}): error code {set_err} (float32) / {set_err_int16} (int16)."
                 )
 
         # Prepare ALSA PCM device for streaming
@@ -572,18 +672,21 @@ class AlsaExecutionBackend(LinuxExecutionBackend):
         # 2. Execute deterministic DSP graph
         out_result = self._graph.process(block)
 
-        # 3. Format conversion: Planar float32 -> Interleaved float32
+        # 3. Format conversion: Planar float32 -> Interleaved buffer (negotiated float32 or int16)
         if isinstance(out_result, PCMBlock):
-            interleaved = AlsaPCMAdapter.planar_float32_to_interleaved_float32(out_result)
-            frames_to_write = out_result.frames
+            primary_block = out_result
         elif isinstance(out_result, dict):
             # For multi-port crossover outputs, take the primary output port
             first_key = next(iter(out_result.keys()))
-            first_block = out_result[first_key]
-            interleaved = AlsaPCMAdapter.planar_float32_to_interleaved_float32(first_block)
-            frames_to_write = first_block.frames
+            primary_block = out_result[first_key]
         else:
             raise MalformedBufferError(f"Unexpected graph output type {type(out_result)!r}.")
+
+        frames_to_write = primary_block.frames
+        if self._negotiated_format == "int16":
+            interleaved = AlsaPCMAdapter.planar_float32_to_interleaved_int16(primary_block)
+        else:
+            interleaved = AlsaPCMAdapter.planar_float32_to_interleaved_float32(primary_block)
 
         # 4. Transfer to ALSA hardware via snd_pcm_writei
         written = self._handle.writei(interleaved, frames_to_write)
@@ -679,10 +782,16 @@ class AlsaAudioCapture:
         self._xrun_count: int = 0
         self._recovered_xrun_count: int = 0
         self._frames_captured: int = 0
+        self._negotiated_format: str = "int16" if config.use_int16 else "float32"
+
+    @property
+    def negotiated_format(self) -> str:
+        """Actual negotiated ALSA capture sample format ('float32' or 'int16')."""
+        return self._negotiated_format
 
     @property
     def config(self) -> AlsaCaptureConfig:
-        """Capture configuration."""
+        """Active capture configuration."""
         return self._config
 
     @property
@@ -706,7 +815,7 @@ class AlsaAudioCapture:
         return self._frames_captured
 
     def start(self) -> None:
-        """Open ALSA capture device, prepare stream, and enter RUNNING state."""
+        """Open ALSA capture device, configure parameters, prepare stream, and enter RUNNING state."""
         if self._state == ExecutionState.RUNNING:
             return
         if self._state == ExecutionState.CLOSED:
@@ -739,6 +848,36 @@ class AlsaAudioCapture:
                     block_size=self._config.block_size,
                 )
 
+        # Configure hardware parameters and negotiate format
+        latency_us = int(round((self._config.block_size * 4 / self._config.sample_rate) * 1_000_000))
+        preferred_fmt = SND_PCM_FORMAT_S16_LE if self._config.use_int16 else SND_PCM_FORMAT_FLOAT_LE
+        set_err = self._handle.set_params(
+            format=preferred_fmt,
+            access=SND_PCM_ACCESS_RW_INTERLEAVED,
+            channels=self._config.channels,
+            rate=self._config.sample_rate,
+            soft_resample=1,
+            latency=max(10000, latency_us),
+        )
+        if set_err == 0:
+            self._negotiated_format = "int16" if self._config.use_int16 else "float32"
+        elif not self._config.use_int16:
+            # Fallback to int16 if float32 rejected
+            set_err_int16 = self._handle.set_params(
+                format=SND_PCM_FORMAT_S16_LE,
+                access=SND_PCM_ACCESS_RW_INTERLEAVED,
+                channels=self._config.channels,
+                rate=self._config.sample_rate,
+                soft_resample=1,
+                latency=max(10000, latency_us),
+            )
+            if set_err_int16 == 0:
+                self._negotiated_format = "int16"
+            else:
+                raise ExecutionDeviceError(f"Failed to configure ALSA capture parameters: error code {set_err}.")
+        else:
+            raise ExecutionDeviceError(f"Failed to configure ALSA capture parameters: error code {set_err}.")
+
         prep_err = self._handle.prepare()
         if prep_err < 0:
             raise ExecutionDeviceError(f"Failed to prepare ALSA capture stream: error code {prep_err}.")
@@ -754,7 +893,8 @@ class AlsaAudioCapture:
 
         frames = self._config.block_size
         channels = self._config.channels
-        dtype = np.int16 if self._config.use_int16 else np.float32
+        use_int16 = (self._negotiated_format == "int16")
+        dtype = np.int16 if use_int16 else np.float32
         interleaved = np.empty(frames * channels, dtype=dtype)
 
         read_res = self._handle.readi(interleaved, frames)
@@ -768,7 +908,7 @@ class AlsaAudioCapture:
                     retry_res = self._handle.readi(interleaved, frames)
                     if retry_res > 0:
                         self._frames_captured += retry_res
-                        if self._config.use_int16:
+                        if use_int16:
                             return AlsaPCMAdapter.interleaved_int16_to_planar_pcm_block(
                                 interleaved, self._config.sample_rate, channels
                             )
@@ -782,7 +922,7 @@ class AlsaAudioCapture:
             )
 
         self._frames_captured += read_res
-        if self._config.use_int16:
+        if use_int16:
             return AlsaPCMAdapter.interleaved_int16_to_planar_pcm_block(
                 interleaved, self._config.sample_rate, channels
             )

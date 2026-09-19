@@ -3,7 +3,7 @@
 > **Document Type:** Authoritative System Baseline & Technical Status Record  
 > **Status:** NORMATIVE CURRENT ARCHITECTURE SNAPSHOT  
 > **Repository:** `E:\AcoustiForge`  
-> **Regression Baseline:** 528 Passed, 2 Skipped, 0 Failed, 0 Errors, 0 Warnings (`pytest -q -W error`)  
+> **Regression Baseline:** 552/553 Passed (552 Windows, 553 Linux Docker), 0 Failed, 0 Errors, 0 Warnings (`pytest -q -W error`)  
 > **Core Status:** 100% Frozen (Phases 1 through 5-7A)  
 > **Date:** September 2026  
 
@@ -11,10 +11,10 @@
 
 ## 1. System Status Summary
 
-AcoustiForge is a deterministic computational acoustics platform designed for embedded audio and digital signal processing (DSP) applications. It encompasses two primary operational pipelines:
+AcoustiForge is a deterministic computational acoustics platform designed for embedded audio and digital signal processing (DSP) applications. It encompasses two distinct, contract-governed pipelines with a defined physical measurement boundary:
 
 1. **Offline & Real-Time DSP Execution Pipeline:** Bounded coordinate-descent optimization, DAG compute graph compilation, planar PCM block processing, and Linux ALSA direct hardware output.
-2. **Sequential Acoustic Measurement & Calibration Pipeline:** Deterministic logarithmic sine sweep excitation, Farina inverse filter deconvolution, pseudo-anechoic reflection gating, microphone calibration, and ALSA audio capture.
+2. **Sequential Acoustic Measurement & Calibration Pipeline:** Deterministic logarithmic sine sweep excitation, Farina inverse filter deconvolution, reflection-gated measurement, microphone calibration, and ALSA audio capture.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -33,9 +33,10 @@ AcoustiForge is a deterministic computational acoustics platform designed for em
 │  • Logarithmic Sine Sweep Generator & Farina Deconvolution (Phase 5-4C Unit B)│
 │  • Linux ALSA Audio Capture Adapter (`snd_pcm_readi`) (Phase 5-4C Unit C)   │
 │  • Simulated End-to-End Closed-Loop Measurement Harness (Phase 5-4C)        │
+│  • Gate A-S: Digital / Software ALSA Playback & Format Negotiation (Gate A-S)│
 │                                                                             │
 │  [IMPLEMENTED BUT PHYSICAL VALIDATION PENDING]                              │
-│  • Physical USB DAC / I²S Audio Playback (Gate A)                           │
+│  • Physical USB DAC / I²S Audio Playback (Gate A-H)                         │
 │  • Physical USB Measurement Microphone Capture (Gate B)                     │
 │  • In-Room Measurement Repeatability (Gate C)                               │
 │  • Live In-Room Hardware DSP Correction (Gate D)                            │
@@ -186,11 +187,12 @@ All components below have zero third-party dependencies (relying strictly on Pyt
 
 ## 5. Physical Validation Gates (Phase 5-4C Roadmap)
 
-Physical validation proceeds through five strictly sequential gates:
+Physical validation proceeds through strictly sequential gates:
 
 | Gate | Name | Objectives | Required Evidence | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Gate A** | Electrical / ALSA Playback | Verify continuous, xrun-free PCM output on a physical Linux USB DAC. | OS system log, clean line-out audio, zero underruns over 5+ min. | `[PENDING]` |
+| **Gate A-S** | Digital ALSA Playback | Verify multi-block PCM streaming, format negotiation, and lifecycle via ALSA ctypes on virtual `null` / mock device. | 24 automated unit/integration tests passing cleanly under native Linux / Docker ALSA. | `[PASSED - SOFTWARE VALIDATED]` |
+| **Gate A-H** | Physical ALSA Playback | Verify continuous, xrun-free PCM output on a physical Linux USB DAC / audio interface. | OS system log, clean line-out electrical audio, zero underruns over 5+ min. | `[PENDING]` |
 | **Gate B** | Acoustic Measurement | Ingest live microphone sweep recording into `ImpulseResponseData` and `FrequencyResponseData`. | Gated impulse, SNR $> 30\text{ dB}$, clean diagnostics report. | `[PENDING]` |
 | **Gate C** | Measurement Repeatability | Establish in-room baseline stability across repeated sweeps without changing DSP. | Baseline standard deviation $\sigma < 0.3\text{ dB}$ across $100\text{ Hz} - 10\text{ kHz}$. | `[PENDING]` |
 | **Gate D** | Bounded Hardware DSP | Stream audio through active `ComputeGraph` loaded on `AlsaExecutionBackend`. | Audible/electrical filter attenuation/gain matching DSP graph. | `[PENDING]` |
@@ -212,6 +214,6 @@ The following technologies are explicitly deferred and must not be implemented a
 
 ## 7. Regression Standard & Integrity
 
-* **Total Test Suite:** 528 passed, 2 skipped, 0 failed, 0 errors, 0 warnings (`pytest -q -W error`).
+* **Total Test Suite:** 552 passed (Windows) / 553 passed (Linux Docker), 0 failed, 0 errors, 0 warnings (`pytest -q -W error`).
 * **Core Codebase Mutation:** Zero production-code mutation to frozen core packages (`domain/`, `graph/`, `contracts/`, `builders/`, `extensions/`, `intent/`, `experience/`).
 * **Third-Party Dependencies:** Zero non-stdlib additions (pure Python, NumPy, POSIX `ctypes`).

@@ -180,7 +180,7 @@ To definitively establish that AcoustiForge delivers real-world acoustic value, 
 │          │ (Synchronous Sweep)                                v             │
 │   ┌──────┴───────────────┐                          ┌───────────────────┐   │
 │   │ Calibrated USB Mic   │ <────────────────────────│   Physical Room   │   │
-│   │ (e.g. miniDSP UMIK-1)│     Acoustic Pressure    │ (Listening Pos.)  │   │
+│   │ (e.g. UMIK-1 / UMM-6)│     Acoustic Pressure    │ (Listening Pos.)  │   │
 │   └──────────────────────┘                          └───────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -201,10 +201,10 @@ To definitively establish that AcoustiForge delivers real-world acoustic value, 
 5. **Real-Time DSP Playback & Re-Measurement:**
    - Stream identical test audio through the active `ComputeGraph` via ALSA.
    - Capture the post-correction acoustic response using the identical microphone setup.
-6. **Objective Quantitative Comparison:**
-   - Ingest the re-measured response.
-   - Calculate acoustic metrics (`calculate_response_metrics`) comparing baseline vs. corrected.
-   - **Target Metric:** Standard deviation of frequency response error in the $100\text{ Hz} - 10\text{ kHz}$ band must decrease by $\ge 3\text{ dB}$.
+6. **Objective Quantitative Comparison (Gate E Delta Tracking):**
+   - Ingest the re-measured post-DSP acoustic response $M_{\text{post}}(f)$.
+   - Calculate the measured acoustic response delta $\Delta(f) = M_{\text{post}}(f) - M_{\text{pre}}(f)$.
+   - **Target Criterion:** Verify that the measured acoustic response delta tracks the known/synthesized DSP filter transfer function $H_{\text{DSP}}(f)$ within the experimentally justified tolerance across the valid measurement band. *(Note: The earlier proposed commercialization target of a universal $\ge 3\text{ dB}$ room error reduction was evaluated in Phase 5-4C discovery and judged premature pending empirical modal baselines).*
 
 ---
 
@@ -353,7 +353,7 @@ The next logical and highest-leverage engineering milestone is:
 └─────────────────────────────────────────────────────────────────────────────┘
 
   [Physical Rig Setup]
-  Raspberry Pi 4/5 + USB Audio Interface + 2-Way Powered Speaker + UMIK-1 Mic
+  Linux SBC (e.g. Raspberry Pi 4/5) + USB DAC / Audio Interface + Powered Speaker + Calibrated USB Mic (e.g. UMIK-1 / UMM-6)
                          │
                          ▼
   [Step 1: Physical ALSA Playback Verification]
@@ -390,12 +390,13 @@ Phase 5-4C will be considered successfully completed if and only if the followin
    Multi-channel output maintains sample-accurate inter-channel synchronization with zero phase drift between left and right physical outputs over the duration of the test.
 4. **Physical Measurement Ingestion:**
    A real acoustic impulse response recorded in a physical room is successfully parsed, reflection-gated, and microphone-calibrated into a valid `FrequencyResponseData` structure without manual data intervention.
-5. **Objective Room Acoustic Improvement:**
+5. **Objective Causal DSP Tracking (Gate E Target):**
    Physical re-measurement of the loudspeaker in the room with AcoustiForge DSP active demonstrates:
-   - Frequency response root-mean-square error (RMSE) relative to the target curve is **reduced by at least $3.0\text{ dB}$** across the $100\text{ Hz} - 10\text{ kHz}$ band.
+   - The measured acoustic response delta $\Delta(f) = M_{\text{post}}(f) - M_{\text{pre}}(f)$ tracks the known/synthesized DSP filter transfer function $H_{\text{DSP}}(f)$ within experimentally justified tolerance across the valid measurement band.
    - No acoustic instability, oscillation, or excessive peaking ($> +6\text{ dB}$ narrow-band boost) is introduced.
+   *(Note: The earlier proposed criterion of a universal $\ge 3.0\text{ dB}$ RMSE reduction relative to an arbitrary target curve has been reclassified as premature pending empirical room modal baselines).*
 6. **Zero Regression Standard:**
-   All **505 existing software unit and integration tests** continue to pass cleanly with zero warnings (`pytest -q -W error`).
+   All **528 existing software unit and integration tests** continue to pass cleanly with zero warnings (`pytest -q -W error`).
 
 ---
 

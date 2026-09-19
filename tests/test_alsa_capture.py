@@ -195,8 +195,9 @@ class TestMockAlsaCapture:
         capture.close()
 
     def test_capture_lifecycle_invariants(self) -> None:
+        mock = MockAlsaDeviceHandle("mock_capture", sample_rate=48000, channels=1, block_size=256)
         cfg = AlsaCaptureConfig()
-        capture = AlsaAudioCapture(config=cfg)
+        capture = AlsaAudioCapture(config=cfg, mock_handle=mock)
 
         # Cannot read before start
         with pytest.raises(ExecutionStateError):

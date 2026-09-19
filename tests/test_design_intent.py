@@ -303,8 +303,8 @@ def test_security_ai_cannot_inject_arbitrary_coefficients_or_nodes() -> None:
         intent_id="sec-002",
         query_text="Direct node injection attempt",
     )
-    # Attempting to add arbitrary fields raises AttributeError (slots=True)
-    with pytest.raises(AttributeError):
+    # Attempting to add arbitrary fields raises AttributeError or TypeError (frozen slots=True)
+    with pytest.raises((AttributeError, TypeError)):
         intent.custom_biquad_coefficients = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]  # type: ignore
 
 
