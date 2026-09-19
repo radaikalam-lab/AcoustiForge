@@ -8,9 +8,11 @@ Normative Authority:
 """
 
 from .crossover_builder import CrossoverGraphBuilder
+from .multiway_builder import ThreeWayGraphBuilder
 from .system_builder import SystemTopologyBuilder
 
 __all__ = [
     "CrossoverGraphBuilder",
     "SystemTopologyBuilder",
+    "ThreeWayGraphBuilder",
 ]

@@ -4,7 +4,9 @@ Offline parsers and data import routines for acoustic measurement files.
 
 Normative Authority:
 - docs/contracts/MEASUREMENT_INGESTION_CONTRACT.md
+- docs/contracts/IMPULSE_RESPONSE_INGESTION_CONTRACT.md
 - docs/phases/PHASE_4A_CONTRACT_RECONCILIATION.md
+- docs/phases/PHASE_4C_CONTRACT_RECONCILIATION.md
 """
 
 from .exceptions import (
@@ -13,6 +15,7 @@ from .exceptions import (
     MeasurementIngestionError,
     UnsupportedMeasurementFormatError,
 )
+from .impulse_parser import parse_impulse_file, parse_impulse_text
 from .parser import parse_measurement_file, parse_measurement_text
 from .result import MeasurementImportResult
 
@@ -22,6 +25,8 @@ __all__ = [
     "MeasurementImportResult",
     "MeasurementIngestionError",
     "UnsupportedMeasurementFormatError",
+    "parse_impulse_file",
+    "parse_impulse_text",
     "parse_measurement_file",
     "parse_measurement_text",
 ]
