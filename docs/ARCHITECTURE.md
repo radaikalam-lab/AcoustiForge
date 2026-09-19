@@ -72,3 +72,14 @@ streaming/dataflow execution model.
 
 AcoustiForge:
 architecture and acoustic intelligence above these foundations.
+
+## Runtime Architecture & Neutrality
+
+AcoustiForge is strictly runtime-neutral. The architecture distinguishes:
+
+1. **ACE Semantic Contracts:** Platform- and language-independent mathematical and audio invariants.
+2. **Reference Runtime:** Python 3.12+ / NumPy for high-level simulation, golden-model verification, and test generation.
+3. **Embedded / Native Runtime:** Native C/C++ implementations for ARM Cortex-M (CMSIS-DSP), RISC-V, and bare-metal MCU platforms.
+4. **Scripting Runtime:** Optional MicroPython integration for dynamic graph configuration on embedded targets.
+
+PCM semantic definitions are decoupled from physical storage representation (raw pointers, circular DMA buffers, static memory pools). See `docs/contracts/RUNTIME_ARCHITECTURE_AMENDMENT_0_1.md`.

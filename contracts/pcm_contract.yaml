@@ -1,0 +1,54 @@
+# AcoustiForge Canonical PCM Contract Schema — Phase 0
+# Normative Authority: prompts/MASTER_PROMPT.md
+
+contract:
+  name: pcm_contract
+  version: "0.1.0"
+  phase: "0"
+  status: "NORMATIVE"
+
+computational_representation:
+  dtype: "float32"
+  precision_bits: 32
+  layout: "planar"
+  memory_order: "C_CONTIGUOUS"
+  dimensions: 2
+  shape:
+    - "channels"
+    - "frames"
+  range:
+    nominal_min: -1.0
+    nominal_max: 1.0
+    headroom_allowed: true
+  finite_only: true
+
+channels:
+  phase_0_supported:
+    - 1  # Mono
+    - 2  # Stereo
+  channel_ordering:
+    mono:
+      0: "M"
+    stereo:
+      0: "L"
+      1: "R"
+
+sample_rate:
+  type: "integer"
+  constraint: "positive_nonzero"
+  standard_rates_hz:
+    - 44100
+    - 48000
+    - 88200
+    - 96000
+
+block:
+  minimum_frames: 1
+  size_policy: "dynamic"
+
+passthrough_invariants:
+  sample_preservation: "bit_exact"
+  gain_db: 0.0
+  latency_frames: 0
+  stateless: true
+  mutation: false
