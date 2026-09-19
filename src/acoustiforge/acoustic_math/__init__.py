@@ -59,6 +59,15 @@ from .protection import (
     design_infrasonic_protection_filter,
 )
 from .sensitivity import GainDesignResult, calculate_sensitivity_gain, calculate_system_sensitivity_gains
+from .sweep import (
+    LogSweepSpecification,
+    deconvolve_sweep,
+    export_sweep_to_wav_bytes,
+    export_sweep_to_wav_file,
+    generate_inverse_sweep,
+    generate_log_sweep,
+    sweep_to_pcm_block,
+)
 from .target_curve import evaluate_target_curve
 
 __all__ = [
@@ -87,6 +96,7 @@ __all__ = [
     "calculate_system_sensitivity_gains",
     "complex_response_to_frequency_response_data",
     "coordinate_descent_search",
+    "deconvolve_sweep",
     "derive_protection_filter_for_driver",
     "design_infrasonic_protection_filter",
     "driver_response_to_complex",
@@ -94,12 +104,18 @@ __all__ = [
     "evaluate_biquad_complex_response",
     "evaluate_measurement_quality",
     "evaluate_target_curve",
+    "export_sweep_to_wav_bytes",
+    "export_sweep_to_wav_file",
     "generate_crossover_candidate_grid",
     "generate_delay_candidate_grid",
+    "generate_inverse_sweep",
+    "generate_log_sweep",
     "generate_window",
     "golden_section_line_search",
     "is_candidate_better",
+    "LogSweepSpecification",
     "smooth_frequency_response",
+    "sweep_to_pcm_block",
     "synthesize_crossover_biquads",
     "synthesize_parametric_eq",
     "transform_impulse_to_frequency_response",

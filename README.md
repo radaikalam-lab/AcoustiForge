@@ -1,6 +1,6 @@
 # AcoustiForge
 
-**AcoustiForge** is a deterministic, contract-first computational acoustics and digital signal processing (DSP) platform. It provides mathematically authoritative acoustic optimization, frozen stateful compute graph compilation, low-latency PCM execution abstractions, and an evidence-oriented runtime experience store with deterministic retrieval and analytics.
+**AcoustiForge** is a deterministic, contract-first computational acoustics and digital signal processing (DSP) platform. It provides mathematically authoritative acoustic optimization, frozen stateful compute graph compilation, low-latency PCM execution and capture abstractions, and an evidence-oriented runtime experience store with deterministic retrieval and analytics.
 
 ---
 
@@ -24,69 +24,93 @@ AcoustiForge is engineered around strict trust and determinism boundaries:
 
 ## 2. System Architecture
 
-```
-                    USER / APPLICATION
-                           │
-                           ▼
-                  Optional AI / Intent
-                           │
-                           ▼
-                     DesignIntent
-                           │
-                           ▼
-                 VALIDATION FIREWALL
-                           │
-                           ▼
-              OptimizationSpecification
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │   ACOUSTIFORGE CORE    │
-              │                        │
-              │ Acoustic Domain Models │
-              │ Acoustic Mathematics   │
-              │ Deterministic Optimizer│
-              │ Validation Firewall    │
-              └────────────┬───────────┘
-                           │
-                           ▼
-                 OptimizationResult
-                           │
-                           ▼
-                  Graph Compilation
-                           │
-                           ▼
-                     ComputeGraph (Frozen DAG)
-                           │
-                           ▼
-                    PCM Audio Execution
-                           │
-             ┌─────────────┼─────────────┐
-             ▼             ▼             ▼
-          Offline       Linux/ALSA    Future Platform
-          Backend       (libasound)   Backends
-                           │
-                           ▼
-                    Runtime Evidence
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-          Runtime      Temporal/     Engagement /
-          Metrics       Solar          Feedback
-              │            │            │
-              └────────────┼────────────┘
-                           ▼
-                    ExperienceStore (Append-Only JSONL)
-                           │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-     ExperienceRetriever       ExperienceAnalytics
-   (Structured Query Engine)  (Descriptive Summaries)
-              │                         │
-              └────────────┬────────────┘
-                           ▼
-                  Future AI Consumers
-               (Advisory Retrieval Context)
+AcoustiForge provides two distinct, fully decoupled operational paths: the **Deterministic DSP & Playback Execution Path** and the **Sequential Physical Measurement & Calibration Path**:
+
+```text
+                                USER / APPLICATION
+                                       │
+                                       ▼
+                              Optional AI / Intent
+                                       │
+                                       ▼
+                                 DesignIntent
+                                       │
+                                       ▼
+                             VALIDATION FIREWALL
+                                       │
+                                       ▼
+                          OptimizationSpecification
+                                       │
+                                       ▼
+                          ┌────────────────────────┐
+                          │   ACOUSTIFORGE CORE    │
+                          │                        │
+                          │ Acoustic Domain Models │
+                          │ Acoustic Mathematics   │
+                          │ Deterministic Optimizer│
+                          │ Validation Firewall    │
+                          └────────────┬───────────┘
+                                       │
+                                       ▼
+                             OptimizationResult
+                                       │
+                                       ▼
+                              Graph Compilation
+                                       │
+                                       ▼
+                                 ComputeGraph (Frozen DAG)
+                                       │
+            ┌──────────────────────────┴──────────────────────────┐
+            │ [A] DSP PLAYBACK EXECUTION                          │ [B] MEASUREMENT & CAPTURE
+            ▼                                                     ▼
+     PCM Audio Execution                                Log-Sine Sweep Excitation
+            │                                                     │
+     ┌──────┴──────┐                                              ▼
+     ▼             ▼                                    [AlsaExecutionBackend]
+  Offline     Linux/ALSA                                (Playback to Speaker)
+  Backend     (Playback)                                          │
+                   │                                      (Physical Room Path)
+                   │                                              │
+                   │                                    [AlsaAudioCapture]
+                   │                                    (Microphone Capture)
+                   │                                              │
+                   │                                              ▼
+                   │                                    Farina Deconvolution
+                   │                                              │
+                   │                                              ▼
+                   │                                    [ImpulseResponseData]
+                   │                                              │
+                   │                                              ▼
+                   │                                      Reflection Gating
+                   │                                              │
+                   │                                              ▼
+                   │                                    Microphone Calibration
+                   │                                              │
+                   │                                              ▼
+                   │                                    [FrequencyResponseData]
+                   │                                              │
+                   └──────────────────────┬───────────────────────┘
+                                          ▼
+                                   Runtime Evidence
+                                          │
+                          ┌───────────────┼───────────────┐
+                          ▼               ▼               ▼
+                       Runtime        Temporal/        Engagement /
+                       Metrics         Solar             Feedback
+                          │               │               │
+                          └───────────────┼───────────────┘
+                                          ▼
+                                   ExperienceStore (Append-Only JSONL)
+                                          │
+                          ┌───────────────┴───────────────┐
+                          ▼                               ▼
+                 ExperienceRetriever             ExperienceAnalytics
+               (Structured Query Engine)        (Descriptive Summaries)
+                          │                               │
+                          └───────────────┬───────────────┘
+                                          ▼
+                                 Future AI Consumers
+                              (Advisory Retrieval Context)
 ```
 
 ---
@@ -123,29 +147,30 @@ Located in `src/acoustiforge/graph/` and `src/acoustiforge/builders/`:
 
 ---
 
-## 6. Audio Execution Layer
+## 6. Audio Execution & Capture Subsystems
 
 Located in `src/acoustiforge/execution/`:
 
-```text
-ComputeGraph
-     ↓
-AudioExecutionController
-     ↓
-AudioExecutionBackend
-     ├── OfflineExecutionBackend
-     └── LinuxExecutionBackend
-             ↓
-        AlsaExecutionBackend (libasound.so.2)
-```
-
 * **`OfflineExecutionBackend`:** Synchronous, deterministic PCM block processing for simulation, automated testing, and offline rendering.
-* **`LinuxExecutionBackend` / `AlsaExecutionBackend`:** Direct platform binding to Linux ALSA via Python `ctypes` and `libasound.so.2` with zero third-party pip dependencies.
-* **Platform Status:** **Native Linux Verified, Physical Hardware Pending.** The native Linux ALSA userspace and library bindings are fully validated in live Linux environments (Debian Bookworm); physical Raspberry Pi / USB DAC playback remains subject to the Phase 5-4C hardware validation gate.
+* **`LinuxExecutionBackend` / `AlsaExecutionBackend`:** Direct platform binding to Linux ALSA playback via Python `ctypes` and `libasound.so.2` (`snd_pcm_writei`) with automatic `-EPIPE` xrun recovery and zero third-party pip dependencies.
+* **`AlsaAudioCapture`:** Linux ALSA audio recording engine (`snd_pcm_readi`) acquiring PCM from USB measurement microphones, performing hardware format conversion (Float32 / Int16 $\to$ Planar Float32 `PCMBlock`), and managing buffer overrun recovery.
+* **Platform Status:** **Software Implemented & Native Linux Verified; Physical Hardware Validation Pending.** The native Linux ALSA userspace and library bindings are fully validated in live Linux environments (Debian Bookworm); physical Raspberry Pi / USB DAC playback and microphone calibration remain subject to the Phase 5-4C hardware validation gates (Gates A–E).
 
 ---
 
-## 7. AI DesignIntent Boundary
+## 7. Acoustic Excitation & Measurement Pipeline
+
+Located in `src/acoustiforge/acoustic_math/sweep.py`, `gating.py`, `calibration.py`, and `diagnostics.py`:
+
+* **Logarithmic Sine Sweep Generator (`generate_log_sweep`):** Deterministic, Nyquist-bounded excitation signal generation with smooth cosine boundary tapers and configurable amplitude/duration.
+* **Farina Inverse Filter & Deconvolution (`generate_inverse_sweep`, `deconvolve_sweep`):** Analytical $-6\text{ dB/octave}$ time-reversed inverse filter and linear FFT deconvolution to extract time-domain impulse responses ($IR$).
+* **Pseudo-Anechoic Reflection Gating (`apply_reflection_gate`):** Isolates direct acoustic sound from room boundary reflections using configurable Hann, Tukey, and Half-Hann window tapers.
+* **Microphone Calibration (`apply_microphone_calibration`):** Interpolates and subtracts laboratory microphone calibration files (`.cal`, `.txt`) across magnitude and phase.
+* **Measurement Quality Diagnostics (`evaluate_measurement_quality`):** Evaluates SNR, low-frequency resolution limits, and reflection contamination notches.
+
+---
+
+## 8. AI DesignIntent Boundary
 
 Located in `src/acoustiforge/intent/`:
 
@@ -170,7 +195,7 @@ OptimizationSpecification / MultiPositionOptimizationSpecification
 
 ---
 
-## 8. Runtime Experience & Engagement Store
+## 9. Runtime Experience & Engagement Store
 
 Located in `src/acoustiforge/experience/`:
 
@@ -190,7 +215,7 @@ $$\text{Intent} \to \text{Specification} \to \text{Optimization} \to \text{Graph
 
 ---
 
-## 9. Experience Retrieval & Descriptive Analytics
+## 10. Experience Retrieval & Descriptive Analytics
 
 Located in `src/acoustiforge/experience/retrieval.py` and `src/acoustiforge/experience/analytics.py`:
 
@@ -206,7 +231,7 @@ Located in `src/acoustiforge/experience/retrieval.py` and `src/acoustiforge/expe
 
 ---
 
-## 10. Evidence & Trust Hierarchy
+## 11. Evidence & Trust Hierarchy
 
 AcoustiForge strictly isolates evidence classes:
 
@@ -226,7 +251,7 @@ AcoustiForge strictly isolates evidence classes:
 
 ---
 
-## 11. Validation Matrix & Current Status
+## 12. Validation Matrix & Current Status
 
 | Subsystem | Phase | Status |
 |---|---|---|
@@ -236,37 +261,43 @@ AcoustiForge strictly isolates evidence classes:
 | Deterministic Multi-Way Optimization & Graph Compilation | Phase 4D | **Frozen / Validated** |
 | Multi-Position Spatial Optimization (Track C) | Phase 5-1 | **Frozen / Validated** |
 | Linux / SBC Execution Abstraction | Phase 5-3 | **Frozen / Validated** |
-| Linux ALSA Hardware Backend | Phase 5-4 | **Native Linux Verified, Physical Hardware Pending** |
+| Linux ALSA Hardware Backend (Playback) | Phase 5-4 | **Native Linux Verified, Physical Hardware Pending** |
 | AI DesignIntent Integration | Phase 5-5 | **Implemented / Validated** |
 | Runtime Experience & Engagement Boundary | Phase 5-6 | **Implemented / Validated** |
 | Experience Intelligence Discovery | Phase 5-7 | **Discovery Complete** |
 | Experience Retrieval & Analytics | Phase 5-7A | **Implemented / Validated** |
-| Physical DAC / Raspberry Pi Playback | Phase 5-4C | **Pending Hardware Validation Gate** |
+| Sweep Generation & ALSA Capture (Unit B+C) | Phase 5-4C | **Implemented in Software / Verified in Simulation** |
+| Physical Hardware Validation Gates (Gates A–E) | Phase 5-4C | **Pending Physical Hardware Execution** |
 | Retrieval-Augmented Generation (RAG) | Phase 5-7B+ | **Deferred** |
 | Preference Learning / ML Models | Future | **Deferred** |
 
 ---
 
-## 12. Current Validation Snapshot
+## 13. Current Validation Snapshot
 
-* **Latest Verified Regression:** `505 passed, 2 skipped, 0 failures, 0 errors, 0 warnings` under `pytest -q -W error`.
+* **Latest Verified Regression:** `528 passed, 2 skipped, 0 failures, 0 errors, 0 warnings` under `pytest -q -W error`.
 * **Core Mutation:** ZERO.
 * **Track C Mutation:** ZERO.
-* **Execution Mutation:** ZERO.
+* **Intent Mutation:** ZERO.
+* **Experience Mutation:** ZERO.
 * **New Third-Party Dependencies:** ZERO.
 
 ---
 
-## 13. Repository Structure
+## 14. Repository Structure
 
 ```text
 E:\AcoustiForge\
 ├── docs/
 │   └── architecture/                     # Architectural specifications and phase reports
+│       ├── CURRENT_ARCHITECTURE_STATUS.md
+│       ├── COMMERCIALIZATION_READINESS_ASSESSMENT.md
 │       ├── PHASE_4D_7_OPTIMIZER_COMPILATION_AND_FREEZE.md
 │       ├── PHASE_5_1_TRACK_C_MULTI_POSITION_IMPLEMENTATION.md
 │       ├── PHASE_5_3_LINUX_SBC_EXECUTION_HOOK_IMPLEMENTATION.md
 │       ├── PHASE_5_4_LINUX_ALSA_HARDWARE_BACKEND.md
+│       ├── PHASE_5_4C_PHYSICAL_VALIDATION_DISCOVERY.md
+│       ├── PHASE_5_4C_UNIT_BC_IMPLEMENTATION.md
 │       ├── PHASE_5_5_AI_DESIGN_INTENT_INTEGRATION.md
 │       ├── PHASE_5_6_RUNTIME_EXPERIENCE_BOUNDARY.md
 │       ├── PHASE_5_7_EXPERIENCE_INTELLIGENCE_DISCOVERY.md
@@ -275,7 +306,11 @@ E:\AcoustiForge\
 │   └── acoustiforge/
 │       ├── __init__.py
 │       ├── domain/                       # Immutable acoustic value types & validation
-│       ├── acoustic_math/                # Deterministic acoustic mathematics & optimization
+│       ├── acoustic_math/                # Deterministic acoustic mathematics, optimization & sweep engine
+│       │   ├── sweep.py                  # Log-sine sweep generator & Farina deconvolution
+│       │   ├── gating.py                 # Reflection gating & windowing
+│       │   ├── calibration.py            # Microphone calibration
+│       │   └── optimization.py           # Coordinate descent optimizer
 │       ├── graph/                        # Stateful DSP nodes & ComputeGraph DAG
 │       ├── contracts/                    # PCM & audio stream contracts
 │       ├── builders/                     # Pipeline & Crossover graph builders
@@ -285,7 +320,7 @@ E:\AcoustiForge\
 │       │   ├── interface.py
 │       │   ├── offline.py
 │       │   ├── linux.py
-│       │   └── alsa.py
+│       │   └── alsa.py                   # Playback backend & AlsaAudioCapture engine
 │       ├── intent/                       # AI DesignIntent boundary & validation firewall
 │       │   ├── contracts.py
 │       │   ├── provider.py
@@ -296,12 +331,12 @@ E:\AcoustiForge\
 │           ├── collector.py              # Pipeline episode assembly
 │           ├── retrieval.py              # Multi-criteria search & deterministic ranking
 │           └── analytics.py              # Transparent descriptive analytics
-└── tests/                                # 505 unit & integration regression tests
+└── tests/                                # 528 unit & integration regression tests
 ```
 
 ---
 
-## 14. Getting Started
+## 15. Getting Started
 
 ### Prerequisites
 
@@ -329,37 +364,44 @@ pytest -q -W error
 
 ---
 
-## 15. Architecture & Contract Documentation Map
+## 16. Architecture & Contract Documentation Map
 
 | Document | Scope |
 |---|---|
-| [`PHASE_4D_7_OPTIMIZER_COMPILATION_AND_FREEZE.md`](docs/architecture/PHASE_4D_7_OPTIMIZER_COMPILATION_AND_FREEZE.md) | Multi-way optimization math and ComputeGraph freeze. |
-| [`PHASE_5_1_TRACK_C_MULTI_POSITION_IMPLEMENTATION.md`](docs/architecture/PHASE_5_1_TRACK_C_MULTI_POSITION_IMPLEMENTATION.md) | Spatial multi-position acoustic optimization. |
-| [`PHASE_5_3_LINUX_SBC_EXECUTION_HOOK_IMPLEMENTATION.md`](docs/architecture/PHASE_5_3_LINUX_SBC_EXECUTION_HOOK_IMPLEMENTATION.md) | Platform audio execution abstraction. |
-| [`PHASE_5_4_LINUX_ALSA_HARDWARE_BACKEND.md`](docs/architecture/PHASE_5_4_LINUX_ALSA_HARDWARE_BACKEND.md) | Native Linux ALSA `libasound.so.2` ctypes integration. |
+| [`CURRENT_ARCHITECTURE_STATUS.md`](docs/architecture/CURRENT_ARCHITECTURE_STATUS.md) | Single authoritative snapshot of current system capabilities, readiness, and physical validation gates. |
+| [`COMMERCIALIZATION_READINESS_ASSESSMENT.md`](docs/architecture/COMMERCIALIZATION_READINESS_ASSESSMENT.md) | System-level commercialization gap audit across hardware, software, measurement, and deployment. |
+| [`PHASE_5_4C_UNIT_BC_IMPLEMENTATION.md`](docs/architecture/PHASE_5_4C_UNIT_BC_IMPLEMENTATION.md) | Deterministic sweep generation, Farina deconvolution, and ALSA capture implementation report. |
+| [`PHASE_5_4C_PHYSICAL_VALIDATION_DISCOVERY.md`](docs/architecture/PHASE_5_4C_PHYSICAL_VALIDATION_DISCOVERY.md) | Discovery protocol defining the 5-stage physical hardware validation gates (Gates A–E). |
+| [`PHASE_5_4_LINUX_ALSA_HARDWARE_BACKEND.md`](docs/architecture/PHASE_5_4_LINUX_ALSA_HARDWARE_BACKEND.md) | Native Linux ALSA `libasound.so.2` ctypes playback integration. |
 | [`PHASE_5_5_AI_DESIGN_INTENT_INTEGRATION.md`](docs/architecture/PHASE_5_5_AI_DESIGN_INTENT_INTEGRATION.md) | AI DesignIntent boundary and 4-stage validation firewall. |
 | [`PHASE_5_6_RUNTIME_EXPERIENCE_BOUNDARY.md`](docs/architecture/PHASE_5_6_RUNTIME_EXPERIENCE_BOUNDARY.md) | Immutable ExperienceRecord, solar context, and engagement capture. |
-| [`PHASE_5_7_EXPERIENCE_INTELLIGENCE_DISCOVERY.md`](docs/architecture/PHASE_5_7_EXPERIENCE_INTELLIGENCE_DISCOVERY.md) | Discovery audit on experience consumption and learning boundaries. |
 | [`PHASE_5_7A_EXPERIENCE_RETRIEVAL_ANALYTICS.md`](docs/architecture/PHASE_5_7A_EXPERIENCE_RETRIEVAL_ANALYTICS.md) | Production ExperienceRetriever and ExperienceAnalytics implementation. |
+| [`PHASE_4D_7_OPTIMIZER_COMPILATION_AND_FREEZE.md`](docs/architecture/PHASE_4D_7_OPTIMIZER_COMPILATION_AND_FREEZE.md) | Multi-way optimization math and ComputeGraph freeze. |
+| [`PHASE_5_1_TRACK_C_MULTI_POSITION_IMPLEMENTATION.md`](docs/architecture/PHASE_5_1_TRACK_C_MULTI_POSITION_IMPLEMENTATION.md) | Spatial multi-position acoustic optimization. |
 
 ---
 
-## 16. Current Roadmap & Deferred Items
+## 17. Current Roadmap & Deferred Items
 
-### Implemented & Validated
+### Implemented & Validated in Software
 
 * Deterministic acoustic domain modeling and biquad filter synthesis.
 * Multi-way single- and multi-position spatial optimization.
 * Frozen ComputeGraph compilation and stateful PCM block processing.
-* Offline execution backend and native Linux ALSA backend.
+* Offline execution backend, native Linux ALSA playback, and ALSA audio capture.
+* Deterministic logarithmic sine sweep generation and Farina deconvolution engine.
+* End-to-end simulated physical measurement pipeline harness.
 * AI DesignIntent translation with strict fail-closed validation firewall.
 * Local append-only JSONL Experience Store with engagement and solar context.
 * Deterministic multi-criteria experience retrieval and descriptive analytics.
 
-### Pending Empirical Validation
+### Pending Physical Hardware Validation (Phase 5-4C)
 
-* **Phase 5-4C Hardware Gate:** Physical ALSA playback on dedicated Raspberry Pi / USB DAC hardware.
-* **Physical Acoustic Measurement:** Live room sweep ingestion via physical measurement microphones.
+* **Gate A — Electrical / ALSA Playback:** Physical verification of 24-bit/48kHz streaming to physical USB DAC on Linux host.
+* **Gate B — Raw Acoustic Measurement:** Physical sweep playback and USB measurement microphone capture.
+* **Gate C — Measurement Repeatability:** Verification of baseline repeatability ($\sigma < 0.3\text{ dB}$).
+* **Gate D — Bounded DSP Execution:** Real-time hardware playback through active `ComputeGraph`.
+* **Gate E — Re-Measurement & Causal Delta:** Quantifying physical acoustic improvement vs predicted response.
 
 ### Deferred Capabilities
 
@@ -370,7 +412,7 @@ pytest -q -W error
 
 ---
 
-## 17. Commercial & Design Philosophy
+## 18. Commercial & Design Philosophy
 
 AcoustiForge is built for high-reliability embedded audio and computational acoustic productization. The software architecture strictly isolates non-deterministic components (AI proposals, external user feedback, environmental observations) from the authoritative mathematical Core.
 

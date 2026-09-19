@@ -233,6 +233,14 @@ class AlsaCtypesBinding:
         ]
         cls._lib.snd_pcm_writei.restype = ctypes.c_long
 
+        # snd_pcm_readi(snd_pcm_t *pcm, void *buffer, snd_pcm_uframes_t size)
+        cls._lib.snd_pcm_readi.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+        ]
+        cls._lib.snd_pcm_readi.restype = ctypes.c_long
+
         # snd_pcm_recover(snd_pcm_t *pcm, int err, int silent)
         cls._lib.snd_pcm_recover.argtypes = [
             ctypes.c_void_p,
@@ -267,6 +275,9 @@ class IAlsaDeviceHandle:
     def writei(self, buffer: np.ndarray, frames: int) -> int:
         raise NotImplementedError
 
+    def readi(self, buffer: np.ndarray, frames: int) -> int:
+        raise NotImplementedError
+
     def recover(self, err: int, silent: int = 1) -> int:
         raise NotImplementedError
 
@@ -291,6 +302,9 @@ class MockAlsaDeviceHandle(IAlsaDeviceHandle):
         block_size: int,
         fail_on_write_count: Optional[int] = None,
         xrun_on_write_count: Optional[int] = None,
+        mock_capture_source: Optional[np.ndarray] = None,
+        fail_on_read_count: Optional[int] = None,
+        xrun_on_read_count: Optional[int] = None,
     ) -> None:
         self.device_name: str = device_name
         self.sample_rate: int = sample_rate
@@ -298,11 +312,17 @@ class MockAlsaDeviceHandle(IAlsaDeviceHandle):
         self.block_size: int = block_size
         self.fail_on_write_count: Optional[int] = fail_on_write_count
         self.xrun_on_write_count: Optional[int] = xrun_on_write_count
+        self.mock_capture_source: Optional[np.ndarray] = mock_capture_source
+        self.fail_on_read_count: Optional[int] = fail_on_read_count
+        self.xrun_on_read_count: Optional[int] = xrun_on_read_count
 
         self.is_prepared: bool = False
         self.is_closed: bool = False
         self.total_writes: int = 0
         self.total_frames_written: int = 0
+        self.total_reads: int = 0
+        self.total_frames_read: int = 0
+        self._read_cursor: int = 0
         self.recovered_xruns: int = 0
         self.captured_buffers: list[np.ndarray] = []
 
@@ -331,6 +351,40 @@ class MockAlsaDeviceHandle(IAlsaDeviceHandle):
 
         self.captured_buffers.append(buffer.copy())
         self.total_frames_written += frames
+        return frames
+
+    def readi(self, buffer: np.ndarray, frames: int) -> int:
+        if self.is_closed:
+            return -EBADFD
+        if not self.is_prepared:
+            return -EBADFD
+
+        self.total_reads += 1
+
+        # Simulate fatal hardware read failure if programmed
+        if self.fail_on_read_count is not None and self.total_reads == self.fail_on_read_count:
+            return -EIO
+
+        # Simulate recoverable xrun on read (overrun) if programmed
+        if self.xrun_on_read_count is not None and self.total_reads == self.xrun_on_read_count:
+            self.is_prepared = False
+            return -EPIPE
+
+        needed_samples = frames * self.channels
+        if self.mock_capture_source is not None:
+            available = len(self.mock_capture_source) - self._read_cursor
+            if available <= 0:
+                buffer[:needed_samples] = 0
+            else:
+                to_copy = min(needed_samples, available)
+                buffer[:to_copy] = self.mock_capture_source[self._read_cursor : self._read_cursor + to_copy]
+                if to_copy < needed_samples:
+                    buffer[to_copy:needed_samples] = 0
+                self._read_cursor += to_copy
+        else:
+            buffer[:needed_samples] = 0
+
+        self.total_frames_read += frames
         return frames
 
     def recover(self, err: int, silent: int = 1) -> int:
@@ -372,6 +426,12 @@ class NativeAlsaDeviceHandle(IAlsaDeviceHandle):
             return -EBADFD
         buf_ptr = buffer.ctypes.data_as(ctypes.c_void_p)
         return int(self._lib.snd_pcm_writei(self._pcm_ptr, buf_ptr, ctypes.c_ulong(frames)))
+
+    def readi(self, buffer: np.ndarray, frames: int) -> int:
+        if self._is_closed:
+            return -EBADFD
+        buf_ptr = buffer.ctypes.data_as(ctypes.c_void_p)
+        return int(self._lib.snd_pcm_readi(self._pcm_ptr, buf_ptr, ctypes.c_ulong(frames)))
 
     def recover(self, err: int, silent: int = 1) -> int:
         if self._is_closed:
@@ -565,3 +625,219 @@ class AlsaExecutionBackend(LinuxExecutionBackend):
             self._handle = None
         self._state = ExecutionState.CLOSED
         self._graph = None
+
+
+# ==============================================================================
+# ALSA Audio Capture Subsystem (Unit C)
+# ==============================================================================
+
+@dataclass(frozen=True, slots=True)
+class AlsaCaptureConfig:
+    """Immutable configuration specification for ALSA audio capture devices."""
+
+    alsa_device: str = "default"
+    sample_rate: int = 48000
+    channels: int = 1
+    block_size: int = 256
+    use_int16: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.alsa_device, str) or not self.alsa_device.strip():
+            raise ExecutionConfigError(f"alsa_device must be a non-empty string, got {self.alsa_device!r}.")
+        if not isinstance(self.sample_rate, int) or isinstance(self.sample_rate, bool) or self.sample_rate <= 0:
+            raise ExecutionConfigError(f"sample_rate must be a positive integer, got {self.sample_rate!r}.")
+        if not (8000 <= self.sample_rate <= 384000):
+            raise ExecutionConfigError(
+                f"sample_rate ({self.sample_rate} Hz) is outside supported range [8000, 384000] Hz."
+            )
+        if not isinstance(self.channels, int) or isinstance(self.channels, bool) or self.channels < 1:
+            raise ExecutionConfigError(f"channels must be an integer >= 1, got {self.channels!r}.")
+        if not isinstance(self.block_size, int) or isinstance(self.block_size, bool) or self.block_size < 1:
+            raise ExecutionConfigError(f"block_size must be an integer >= 1, got {self.block_size!r}.")
+
+
+class AlsaAudioCapture:
+    """Concrete Linux ALSA hardware audio recording and capture engine.
+
+    Acquires audio frames from physical or simulated ALSA capture devices (e.g. USB measurement microphones),
+    performs format conversion to canonical planar float32 PCMBlocks, and handles overrun recovery.
+    """
+
+    def __init__(
+        self,
+        config: AlsaCaptureConfig,
+        mock_handle: Optional[IAlsaDeviceHandle] = None,
+        auto_recover_xruns: bool = True,
+    ) -> None:
+        if not isinstance(config, AlsaCaptureConfig):
+            raise ExecutionConfigError(f"Expected AlsaCaptureConfig, got {type(config)!r}.")
+        self._config: AlsaCaptureConfig = config
+        self._mock_handle: Optional[IAlsaDeviceHandle] = mock_handle
+        self._handle: Optional[IAlsaDeviceHandle] = None
+        self._auto_recover_xruns: bool = auto_recover_xruns
+        self._state: ExecutionState = ExecutionState.UNINITIALIZED
+        self._xrun_count: int = 0
+        self._recovered_xrun_count: int = 0
+        self._frames_captured: int = 0
+
+    @property
+    def config(self) -> AlsaCaptureConfig:
+        """Capture configuration."""
+        return self._config
+
+    @property
+    def state(self) -> ExecutionState:
+        """Current execution lifecycle state."""
+        return self._state
+
+    @property
+    def xrun_count(self) -> int:
+        """Total number of detected buffer overruns (xruns)."""
+        return self._xrun_count
+
+    @property
+    def recovered_xrun_count(self) -> int:
+        """Total number of successfully recovered buffer overruns (xruns)."""
+        return self._recovered_xrun_count
+
+    @property
+    def frames_captured(self) -> int:
+        """Total number of PCM frames successfully captured."""
+        return self._frames_captured
+
+    def start(self) -> None:
+        """Open ALSA capture device, prepare stream, and enter RUNNING state."""
+        if self._state == ExecutionState.RUNNING:
+            return
+        if self._state == ExecutionState.CLOSED:
+            raise ExecutionStateError("Cannot start a CLOSED ALSA capture instance.")
+
+        if self._handle is None:
+            if self._mock_handle is not None:
+                self._handle = self._mock_handle
+            elif AlsaCtypesBinding.is_available():
+                lib = AlsaCtypesBinding.get_lib()
+                pcm_ptr = ctypes.c_void_p()
+                dev_bytes = self._config.alsa_device.encode("utf-8")
+                err = lib.snd_pcm_open(
+                    ctypes.byref(pcm_ptr),
+                    dev_bytes,
+                    SND_PCM_STREAM_CAPTURE,
+                    0,
+                )
+                if err < 0:
+                    err_str = lib.snd_strerror(err).decode("utf-8") if hasattr(lib, "snd_strerror") else str(err)
+                    raise ExecutionDeviceError(
+                        f"Failed to open ALSA capture device {self._config.alsa_device!r}: {err_str} (error {err})."
+                    )
+                self._handle = NativeAlsaDeviceHandle(pcm_ptr, lib)
+            else:
+                self._handle = MockAlsaDeviceHandle(
+                    device_name=self._config.alsa_device,
+                    sample_rate=self._config.sample_rate,
+                    channels=self._config.channels,
+                    block_size=self._config.block_size,
+                )
+
+        prep_err = self._handle.prepare()
+        if prep_err < 0:
+            raise ExecutionDeviceError(f"Failed to prepare ALSA capture stream: error code {prep_err}.")
+
+        self._state = ExecutionState.RUNNING
+
+    def read_block(self) -> PCMBlock:
+        """Read a single block of audio frames and return a canonical planar float32 PCMBlock."""
+        if self._state != ExecutionState.RUNNING or self._handle is None:
+            raise ExecutionStateError(
+                f"Cannot read block: ALSA capture is in state {self._state.value!r}, expected RUNNING."
+            )
+
+        frames = self._config.block_size
+        channels = self._config.channels
+        dtype = np.int16 if self._config.use_int16 else np.float32
+        interleaved = np.empty(frames * channels, dtype=dtype)
+
+        read_res = self._handle.readi(interleaved, frames)
+
+        if read_res < 0:
+            self._xrun_count += 1
+            if self._auto_recover_xruns and read_res in (-EPIPE, -ESTRPIPE):
+                rec_err = self._handle.recover(read_res, silent=1)
+                if rec_err == 0:
+                    self._recovered_xrun_count += 1
+                    retry_res = self._handle.readi(interleaved, frames)
+                    if retry_res > 0:
+                        self._frames_captured += retry_res
+                        if self._config.use_int16:
+                            return AlsaPCMAdapter.interleaved_int16_to_planar_pcm_block(
+                                interleaved, self._config.sample_rate, channels
+                            )
+                        else:
+                            return AlsaPCMAdapter.interleaved_float32_to_planar_pcm_block(
+                                interleaved, self._config.sample_rate, channels
+                            )
+            self._state = ExecutionState.STOPPED
+            raise ExecutionDeviceError(
+                f"ALSA hardware read error: code {read_res} on device {self._config.alsa_device!r}."
+            )
+
+        self._frames_captured += read_res
+        if self._config.use_int16:
+            return AlsaPCMAdapter.interleaved_int16_to_planar_pcm_block(
+                interleaved, self._config.sample_rate, channels
+            )
+        else:
+            return AlsaPCMAdapter.interleaved_float32_to_planar_pcm_block(
+                interleaved, self._config.sample_rate, channels
+            )
+
+    def record_frames(self, total_frames: int) -> PCMBlock:
+        """Record an exact number of frames and return a consolidated canonical PCMBlock."""
+        if not isinstance(total_frames, int) or total_frames <= 0:
+            raise ExecutionConfigError(f"total_frames must be a positive integer, got {total_frames!r}.")
+
+        if self._state != ExecutionState.RUNNING:
+            self.start()
+
+        accumulated_blocks: list[PCMBlock] = []
+        frames_gathered = 0
+        while frames_gathered < total_frames:
+            needed = total_frames - frames_gathered
+            block = self.read_block()
+            if block.frames > needed:
+                # Slice last block to exact needed frames
+                sliced_samples = block.samples[:, :needed]
+                sliced_metadata = AudioMetadata(sample_rate=self._config.sample_rate, channels=self._config.channels)
+                accumulated_blocks.append(PCMBlock(samples=sliced_samples, metadata=sliced_metadata))
+                frames_gathered += needed
+            else:
+                accumulated_blocks.append(block)
+                frames_gathered += block.frames
+
+        all_samples = np.ascontiguousarray(np.concatenate([b.samples for b in accumulated_blocks], axis=1), dtype=np.float32)
+        metadata = AudioMetadata(sample_rate=self._config.sample_rate, channels=self._config.channels)
+        return PCMBlock(samples=all_samples, metadata=metadata)
+
+    def record_duration(self, duration_seconds: float) -> PCMBlock:
+        """Record audio for the specified duration in seconds."""
+        if not isinstance(duration_seconds, (int, float)) or duration_seconds <= 0.0:
+            raise ExecutionConfigError(f"duration_seconds must be a positive float, got {duration_seconds!r}.")
+        total_frames = int(round(duration_seconds * self._config.sample_rate))
+        return self.record_frames(total_frames)
+
+    def stop(self) -> None:
+        """Stop ALSA capture stream."""
+        if self._state == ExecutionState.CLOSED:
+            raise ExecutionStateError("Cannot stop a CLOSED ALSA capture.")
+        if self._state == ExecutionState.RUNNING:
+            if self._handle is not None:
+                self._handle.drop()
+            self._state = ExecutionState.STOPPED
+
+    def close(self) -> None:
+        """Release ALSA capture handle and enter CLOSED state."""
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+        self._state = ExecutionState.CLOSED
+

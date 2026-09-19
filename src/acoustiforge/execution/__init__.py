@@ -8,6 +8,8 @@ single-board computers (Raspberry Pi/SBC), mobile, and embedded runtimes.
 from __future__ import annotations
 
 from .alsa import (
+    AlsaAudioCapture,
+    AlsaCaptureConfig,
     AlsaCtypesBinding,
     AlsaExecutionBackend,
     AlsaPCMAdapter,
@@ -38,6 +40,8 @@ __all__ = [
     "OfflineExecutionBackend",
     "LinuxExecutionBackend",
     "LinuxStreamConfig",
+    "AlsaAudioCapture",
+    "AlsaCaptureConfig",
     "AlsaExecutionBackend",
     "AlsaPCMAdapter",
     "AlsaCtypesBinding",
