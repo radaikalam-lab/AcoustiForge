@@ -68,6 +68,11 @@ class UnstableFilterError(AcoustiForgeError, ValueError):
     pass
 
 
+class NumericalEvaluationError(AcoustiForgeError, ArithmeticError):
+    """Raised when an acoustic optimization or forward evaluation produces non-finite or singular numerical output."""
+    pass
+
+
 class InvalidGraphError(AcoustiForgeError, ValueError):
     """Base exception for compute graph topological and structural validation errors."""
     pass

@@ -12,6 +12,8 @@ from .specifications import (
     CrossoverFamily,
     CrossoverSpecification,
     EqualizerBudget,
+    OptimizationResult,
+    OptimizationSpecification,
     TransducerLimits,
 )
 from .validation import (
@@ -36,5 +38,7 @@ __all__ = [
     "InvalidMeasurementError",
     "InvalidProfileError",
     "InvalidSpecificationError",
+    "OptimizationResult",
+    "OptimizationSpecification",
     "TransducerLimits",
 ]

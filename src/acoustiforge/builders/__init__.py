@@ -9,10 +9,12 @@ Normative Authority:
 
 from .crossover_builder import CrossoverGraphBuilder
 from .multiway_builder import ThreeWayGraphBuilder
+from .optimization_adapter import compile_optimization_result_to_graph
 from .system_builder import SystemTopologyBuilder
 
 __all__ = [
     "CrossoverGraphBuilder",
     "SystemTopologyBuilder",
     "ThreeWayGraphBuilder",
+    "compile_optimization_result_to_graph",
 ]

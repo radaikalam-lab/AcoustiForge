@@ -20,7 +20,11 @@ FORBIDDEN_MODULES = {
     "serial",
     "bluetooth",
     "socket",
-    "ctypes",
+}
+
+# stdlib modules permitted only in platform-specific binding modules
+STDLIB_ALLOWED_MODULES = {
+    "ctypes": {"alsa.py"},
 }
 
 OUT_OF_SCOPE_KEYWORDS = {
@@ -46,15 +50,24 @@ def test_no_forbidden_dependencies_imported() -> None:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     root_mod = alias.name.split(".")[0].lower()
-                    assert root_mod not in FORBIDDEN_MODULES, (
-                        f"Forbidden import '{alias.name}' detected in {py_file.name}"
-                    )
+                    _assert_not_forbidden(root_mod, alias.name, py_file)
             elif isinstance(node, ast.ImportFrom):
                 if node.module:
                     root_mod = node.module.split(".")[0].lower()
-                    assert root_mod not in FORBIDDEN_MODULES, (
-                        f"Forbidden import from '{node.module}' detected in {py_file.name}"
-                    )
+                    _assert_not_forbidden(root_mod, node.module, py_file)
+
+
+def _assert_not_forbidden(root_mod: str, full_name: str, py_file: Path) -> None:
+    if root_mod in FORBIDDEN_MODULES:
+        raise AssertionError(
+            f"Forbidden import '{full_name}' detected in {py_file.name}"
+        )
+    allowed_files = STDLIB_ALLOWED_MODULES.get(root_mod)
+    if allowed_files is not None and py_file.name not in allowed_files:
+        raise AssertionError(
+            f"Module '{root_mod}' is only allowed in {sorted(allowed_files)}, "
+            f"but found in {py_file.name}"
+        )
 
 
 def test_scope_containment_no_out_of_scope_features() -> None:
