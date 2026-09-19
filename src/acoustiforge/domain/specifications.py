@@ -60,7 +60,7 @@ class CrossoverSpecification:
 
 @dataclass(frozen=True, slots=True)
 class AcousticTargetCurve:
-    """Immutable acoustic target frequency response curve with piecewise evaluation."""
+    """Immutable acoustic target frequency response curve data container."""
     name: str
     points: tuple[tuple[float, float], ...]
 
@@ -82,49 +82,10 @@ class AcousticTargetCurve:
         """Tuple of discrete target curve magnitudes in dB."""
         return tuple(pt[1] for pt in self.points)
 
-    def evaluate_at(self, frequency_hz: float) -> float:
-        """Evaluate target magnitude in dB at an arbitrary frequency via logarithmic interpolation.
-
-        Args:
-            frequency_hz: Frequency in Hz (must be > 0).
-
-        Returns:
-            Target magnitude in dB SPL.
-        """
-        if not isinstance(frequency_hz, (int, float)) or isinstance(frequency_hz, bool) or not math.isfinite(frequency_hz) or frequency_hz <= 0.0:
-            raise InvalidSpecificationError(f"Evaluation frequency must be positive finite float, got {frequency_hz!r}.")
-
-        f = float(frequency_hz)
-        pts = self.points
-
-        if f <= pts[0][0]:
-            return pts[0][1]
-        if f >= pts[-1][0]:
-            return pts[-1][1]
-
-        # Binary search for segment
-        low = 0
-        high = len(pts) - 1
-        while low <= high:
-            mid = (low + high) // 2
-            if pts[mid][0] <= f:
-                low = mid + 1
-            else:
-                high = mid - 1
-
-        i0 = high
-        i1 = high + 1
-
-        f0, db0 = pts[i0]
-        f1, db1 = pts[i1]
-
-        # Logarithmic frequency interpolation
-        log_f = math.log10(f)
-        log_f0 = math.log10(f0)
-        log_f1 = math.log10(f1)
-
-        t = (log_f - log_f0) / (log_f1 - log_f0)
-        return db0 + t * (db1 - db0)
+    @property
+    def num_points(self) -> int:
+        """Number of discrete coordinate points defining the target curve."""
+        return len(self.points)
 
 
 @dataclass(frozen=True, slots=True)

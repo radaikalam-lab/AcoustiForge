@@ -87,19 +87,16 @@ class TestAcousticTargetCurve:
         assert target.frequencies == (20.0, 100.0, 1000.0, 10000.0, 20000.0)
         assert target.magnitudes_db == (4.0, 2.0, 0.0, -2.0, -4.0)
 
-    def test_evaluate_at_interpolation(self) -> None:
+    def test_target_curve_properties_and_equality(self) -> None:
         pts = ((100.0, 0.0), (1000.0, 6.0))
-        target = AcousticTargetCurve(name="SimpleSlope", points=pts)
+        target1 = AcousticTargetCurve(name="SimpleSlope", points=pts)
+        target2 = AcousticTargetCurve(name="SimpleSlope", points=((100.0, 0.0), (1000.0, 6.0)))
 
-        # Boundary clamping
-        assert target.evaluate_at(50.0) == 0.0
-        assert target.evaluate_at(100.0) == 0.0
-        assert target.evaluate_at(1000.0) == 6.0
-        assert target.evaluate_at(5000.0) == 6.0
-
-        # Logarithmic midpoint: sqrt(100 * 1000) = ~316.2277 Hz -> should evaluate to exactly 3.0 dB
-        mid_f = 10.0 ** (0.5 * (np.log10(100.0) + np.log10(1000.0)))
-        assert pytest.approx(target.evaluate_at(mid_f), rel=1e-5) == 3.0
+        assert target1.num_points == 2
+        assert target1.frequencies == (100.0, 1000.0)
+        assert target1.magnitudes_db == (0.0, 6.0)
+        assert target1 == target2
+        assert not hasattr(target1, "evaluate_at")
 
     def test_non_monotonic_points_rejected(self) -> None:
         pts = ((100.0, 0.0), (50.0, 2.0))
