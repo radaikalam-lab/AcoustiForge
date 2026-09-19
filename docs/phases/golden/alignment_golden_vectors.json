@@ -1,0 +1,48 @@
+{
+  "description": "Golden reference vectors for AcoustiForge Phase 3C Driver Acoustic Alignment",
+  "version": "1.0.0",
+  "vectors": [
+    {
+      "id": "ALIGN_1INCH_48000Hz",
+      "driver_name": "tweeter",
+      "driver_depth_mm": 0.0,
+      "reference_depth_mm": 25.4,
+      "sample_rate": 48000,
+      "speed_of_sound_mps": 343.2,
+      "tolerance": 1e-9,
+      "expected": {
+        "physical_delay_seconds": 0.00007400932400932401,
+        "requested_delay_frames": 3.5524475524475526,
+        "applied_delay_frames": 4
+      }
+    },
+    {
+      "id": "ALIGN_1INCH_44100Hz",
+      "driver_name": "tweeter",
+      "driver_depth_mm": 0.0,
+      "reference_depth_mm": 25.4,
+      "sample_rate": 44100,
+      "speed_of_sound_mps": 343.2,
+      "tolerance": 1e-9,
+      "expected": {
+        "physical_delay_seconds": 0.00007400932400932401,
+        "requested_delay_frames": 3.263811188811189,
+        "applied_delay_frames": 3
+      }
+    },
+    {
+      "id": "ALIGN_90MM_48000Hz",
+      "driver_name": "midrange",
+      "driver_depth_mm": 10.0,
+      "reference_depth_mm": 100.0,
+      "sample_rate": 48000,
+      "speed_of_sound_mps": 343.2,
+      "tolerance": 1e-9,
+      "expected": {
+        "physical_delay_seconds": 0.0002622377622377622,
+        "requested_delay_frames": 12.587412587412585,
+        "applied_delay_frames": 13
+      }
+    }
+  ]
+}

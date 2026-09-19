@@ -306,11 +306,50 @@ class BiquadNode(BaseProcessingNode):
         self._gain_db: float = float(gain_db)
 
         self._coefficients: Optional[BiquadCoefficients] = None
-        # State registers per channel: shape (channels, 2)
         self._state: Optional[np.ndarray] = None
+        self._custom_coefficients: bool = False
 
         if sample_rate is not None and channels is not None:
             self.configure(sample_rate, channels)
+
+    @classmethod
+    def from_coefficients(
+        cls,
+        coefficients: BiquadCoefficients,
+        sample_rate: Optional[int] = None,
+        channels: Optional[int] = None,
+        name: Optional[str] = None,
+    ) -> BiquadNode:
+        """Instantiate a BiquadNode directly with pre-synthesized BiquadCoefficients.
+
+        Args:
+            coefficients: Immutable BiquadCoefficients instance.
+            sample_rate: Optional audio sampling rate in Hz.
+            channels: Optional channel count.
+            name: Optional node name.
+
+        Returns:
+            Configured BiquadNode executing the explicit coefficients.
+        """
+        if not isinstance(coefficients, BiquadCoefficients):
+            raise TypeError(f"Expected BiquadCoefficients, got {type(coefficients)!r}.")
+
+        node = cls.__new__(cls)
+        super(BiquadNode, node).__init__(name=name)
+        node._filter_type = FilterType.LOW_PASS
+        node._frequency = 0.0
+        node._q = None
+        node._bandwidth = None
+        node._shelf_slope = None
+        node._gain_db = 0.0
+        node._coefficients = coefficients
+        node._state = None
+        node._custom_coefficients = True
+
+        if sample_rate is not None and channels is not None:
+            node.configure(sample_rate, channels)
+
+        return node
 
     @property
     def latency_frames(self) -> int:
@@ -356,19 +395,20 @@ class BiquadNode(BaseProcessingNode):
         """Configure node sample rate, channel count, and calculate coefficients."""
         validate_metadata(sample_rate, channels)
 
-        # Calculate coefficients for configured sample rate
-        coeffs = calculate_biquad_coefficients(
-            filter_type=self._filter_type,
-            sample_rate=sample_rate,
-            frequency=self._frequency,
-            q=self._q,
-            bandwidth=self._bandwidth,
-            shelf_slope=self._shelf_slope,
-            gain_db=self._gain_db,
-        )
+        if not getattr(self, "_custom_coefficients", False):
+            # Calculate coefficients for configured sample rate
+            coeffs = calculate_biquad_coefficients(
+                filter_type=self._filter_type,
+                sample_rate=sample_rate,
+                frequency=self._frequency,
+                q=self._q,
+                bandwidth=self._bandwidth,
+                shelf_slope=self._shelf_slope,
+                gain_db=self._gain_db,
+            )
+            self._coefficients = coeffs
 
         super().configure(sample_rate, channels)
-        self._coefficients = coeffs
 
         # Initialize DF-II-T state registers: shape (channels, 2)
         if self._state is None or self._state.shape[0] != channels:
